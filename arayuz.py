@@ -54,7 +54,6 @@ attr.bataryaGonder.connect(bataryaGuncelle)
 attr.hizGonder.connect(hizGuncelle)
 attr.modGonder.connect(modGuncelle)
 
-
 # Window
 class MainWindow:
     def __init__(self):
@@ -85,7 +84,6 @@ class MainWindow:
         ui.modButon_land.clicked.connect(self.landMode)
         ui.modButon_stabilize.clicked.connect(self.stabilizeMode)
 
-        ui.buton_cikis.clicked.connect(self.exit)
         self.main_win.closeEvent = self.exit
 
         # threading.Thread(target=self.haritaGuncelle).start()
@@ -127,7 +125,6 @@ class MainWindow:
     def zamanGuncelle(self):
         global time
         time += 1
-        ui.attribute_gecenZaman.display(time)
 
     def veriGuncelle(self):
         if self.closing is False:

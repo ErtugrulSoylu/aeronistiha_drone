@@ -14,5 +14,6 @@ fclean:	clean
 clean:
 	@rm -rf src/__pycache__
 	@rm -rf inc/__pycache__
+	@rm -rf __pycache__
 
 .PHONY: all server clean fclean
