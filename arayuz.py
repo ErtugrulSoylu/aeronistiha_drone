@@ -7,12 +7,16 @@ sys.path.append('./src')
 sys.path.append('./inc')
 # kullanici arayuzu
 from fileinput import filename
-from PyQt5.QtWidgets import QApplication, QMainWindow
-from PyQt5.QtCore import Qt, pyqtSignal, QObject, QCoreApplication, QTimer
+from PyQt6.QtWidgets import QApplication, QMainWindow
+from PyQt6.QtCore import Qt, pyqtSignal, QObject, QCoreApplication, QTimer
+from PyQt6.QtWebEngineWidgets import QWebEngineView
 from ui_drone import Ui_MainWindow
 # drone
 from dronekit import connect, VehicleMode
 from ucus_komutlari import aero
+# map
+import folium
+import io
 # veriler
 import pandas as pd
 
@@ -60,6 +64,7 @@ class MainWindow:
 
         self.main_win.m_flag = False
         self.droneThreadFlag = False
+        self.coordinates = (0, 0)
         
         # Zamanlayici
         self.timer = QTimer()
@@ -82,6 +87,9 @@ class MainWindow:
 
         ui.buton_cikis.clicked.connect(self.exit)
         self.main_win.closeEvent = self.exit
+
+        # threading.Thread(target=self.haritaGuncelle).start()
+        self.haritaGuncelle()
 
     ############################################################################################################
     ######################################            GEREKLI              #####################################
@@ -139,6 +147,24 @@ class MainWindow:
     @vehicle.on_attribute('mode')
     def modOku(self, attr_name, value):
         attr.modGonder.emit([value.name])
+    
+    ############################################################################################################
+    ######################################             HARITA             ######################################
+    ############################################################################################################
+    
+    def haritaGuncelle(self):
+        coordinate = (37.8199286, -122.4782551)
+        m = folium.Map(
+        	zoom_start=30,
+        	location=coordinate
+        )
+
+        # save map data to data object
+        data = io.BytesIO()
+        m.save(data, close_file=False)
+
+        webView = ui.mapArea
+        webView.setHtml(data.getvalue().decode())
 
     ############################################################################################################
     ######################################            BUTONLAR            ######################################
@@ -183,9 +209,9 @@ class MainWindow:
     def posHoldMode(self):
         self.drone.vehicle.mode = VehicleMode('POSHOLD')
     
-    ## CLOSING APPLICATION PROPERLY ##
-    
-
+    ############################################################################################################
+    ######################################          LOG DOSYALARI         ######################################
+    ############################################################################################################
 
     def exit(self, event=None):
         self.closing = True
@@ -234,8 +260,9 @@ class MainWindow:
         QCoreApplication.instance().quit()
 
 
+
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     main_win = MainWindow()
     main_win.show()
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
