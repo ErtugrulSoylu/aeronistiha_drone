@@ -12,6 +12,7 @@ import cv2
 from keras_preprocessing import image
 import numpy as np
 import os
+import sys
 
 class drone:
     def __init__(self, vehicle):
@@ -171,7 +172,7 @@ class drone:
         #     print("failed to grab frame")
         #     return 0
 
-        path = "taken_photo{}.jpg".format(random.randint(1,1))
+        path = "img/taken_photo{}.jpg".format(random.randint(1,1))
         # cv2.imwrite(path, frame)
         print("{} written!".format(path))
         
@@ -199,8 +200,8 @@ class drone:
 
 
     def havadaTurlama(self):
-        model = model_from_json(open("model_new.json", "r").read())
-        model.load_weights("fire_detection_weights.h5")
+        model = model_from_json(open("inc/model_new.json", "r").read())
+        model.load_weights("inc/fire_detection_weights.h5")
         
         cam = cv2.VideoCapture(0)
         
