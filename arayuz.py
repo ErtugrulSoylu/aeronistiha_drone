@@ -8,15 +8,12 @@ sys.path.append('./inc')
 # kullanici arayuzu
 from fileinput import filename
 from PyQt6.QtWidgets import QApplication, QMainWindow
-from PyQt6.QtCore import Qt, pyqtSignal, QObject, QCoreApplication, QTimer
+from PyQt6.QtCore import Qt, pyqtSignal, QObject, QCoreApplication, QTimer, QUrl
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from ui_drone import Ui_MainWindow
 # drone
 from dronekit import connect, VehicleMode
 from ucus_komutlari import aero
-# map
-import folium
-import io
 # veriler
 import pandas as pd
 
@@ -32,6 +29,8 @@ class Attributes(QObject):
     bataryaGonder = pyqtSignal(list)
     hizGonder = pyqtSignal(list)
     modGonder = pyqtSignal(list)
+    # haritaGonder = pyqtSignal(list)
+
 
 def bataryaGuncelle(value):
     ui.attribute_cekilenAkim.display(value[0])
@@ -47,12 +46,16 @@ def hizGuncelle(value):
 def modGuncelle(value):
     ui.attribute_ucusModu.setText(value[0])
 
+# def haritaGuncelle(value):
+#     vehicleLon = value[0]
+#     vehicleLat = value[1]
 
 # Sinyaller
 attr = Attributes()
 attr.bataryaGonder.connect(bataryaGuncelle)
 attr.hizGonder.connect(hizGuncelle)
 attr.modGonder.connect(modGuncelle)
+# attr.haritaGonder.connect(haritaGuncelle)
 
 # Window
 class MainWindow:
@@ -84,10 +87,8 @@ class MainWindow:
         ui.modButon_land.clicked.connect(self.landMode)
         ui.modButon_stabilize.clicked.connect(self.stabilizeMode)
 
+        self.initMap()
         self.main_win.closeEvent = self.exit
-
-        # threading.Thread(target=self.haritaGuncelle).start()
-        self.haritaGuncelle()
 
     ############################################################################################################
     ######################################            GEREKLI              #####################################
@@ -111,7 +112,7 @@ class MainWindow:
         self.main_win.m_flag=False
 
     ############################################################################################################
-    #####################################            ATTRIBUTES            #####################################
+    #####################################       ATTRIBUTE LISTENERS        #####################################
     ############################################################################################################
 
     @vehicle.on_attribute('velocity')
@@ -120,7 +121,7 @@ class MainWindow:
 
     @vehicle.on_attribute('battery')
     def bataryaOku(self, attr_name, value):
-        attr.bataryaGonder.emit([value.current, value.level, value.voltage])
+        attr.bataryaGonder.emit([value.current, value.level,    value.voltage])
     
     def zamanGuncelle(self):
         global time
@@ -145,23 +146,27 @@ class MainWindow:
     def modOku(self, attr_name, value):
         attr.modGonder.emit([value.name])
     
+    # @vehicle.on_attribute('location.global_frame')
+    # def haritaGuncelle(self, attr_name, value):
+    #     if (vehicleLat != value.lat or vehicleLon != value.lon):
+    #         attr.haritaGonder.emit([value.lat, value.lon])
+
     ############################################################################################################
     ######################################             HARITA             ######################################
     ############################################################################################################
+
+    def initMap(self):
+        global vehicleLon
+        global vehicleLat
+
+        vehicleLon = vehicle.location.global_frame.lon
+        vehicleLat = vehicle.location.global_frame.lat
     
-    def haritaGuncelle(self):
-        coordinate = (37.8199286, -122.4782551)
-        m = folium.Map(
-        	zoom_start=30,
-        	location=coordinate
-        )
-
-        # save map data to data object
-        data = io.BytesIO()
-        m.save(data, close_file=False)
-
         webView = ui.mapArea
-        webView.setHtml(data.getvalue().decode())
+        with open('index.html', 'r') as f:
+            html = f.read()
+            webView.setHtml(html)
+
 
     ############################################################################################################
     ######################################            BUTONLAR            ######################################

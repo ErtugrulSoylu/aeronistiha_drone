@@ -1,247 +1,231 @@
+# import tensorflow as tf
+import numpy as np
 import random
-from struct import calcsize
-from dronekit import connect, VehicleMode
-from pymavlink import mavutil
 import math
 import time
-from tokenize import String
-import keras_preprocessing.image
-import tensorflow as tf
-from keras.models import model_from_json
-import cv2
-from keras_preprocessing import image
-import numpy as np
+# import keras_preprocessing.image
+# import cv2
 import os
 import sys
+from pymavlink import mavutil
+# from keras.models import model_from_json
+# from keras_preprocessing import image
 
 class drone:
-    def __init__(self, vehicle):
-        self.vehicle = vehicle
+    def __init__(self, connection=None, simulation=False, detailed=False):
+        self.detailed = detailed
         
+        if connection:
+            self.connection = connection
+        elif simulation:
+            self.connection = mavutil.mavlink_connection("127.0.0.1:14550")
+            self.connection.wait_heartbeat()
+            print('IHA SIMULASYON ORTAMINA HAZIR')
+        else:
+            self.connection = mavutil.mavlink_connection("/dev/ttyAMA0")
+            self.connection.wait_heartbeat()
+            print('IHA PIXHAWKA BAGLANDI\n')
+
+    def detail(self, message):
+        if self.detailed: print(message)
+
+    def resultMessage(self, command, success=True, failReason="BILINMEYEN BIR HATA"):
+        if success:
+            print(command, "KOMUTU ICRA EDILDI\n")
+        else:
+            print(command, "KOMUTU", failReason, "NEDENIYLE ICRA EDILEMEDI\n")
+
     def arm_only(self):
-        print("Basic pre-arm checks")
-        # Don't try to arm until autopilot is ready
-        while not self.vehicle.is_armable:
-            print(" Waiting for vehicle to initialise...")
-            time.sleep(1)
+        print("\nARM KOMUTU ALINDI")
 
-        print("Arming motors")
-        # Copter should arm in GUIDED mode
-        self.vehicle.mode    = VehicleMode("GUIDED")
-        self.vehicle.armed   = True
+        self.detail("\ARM SINYALI GONDERILIYOR")
+        self.connection.mav.command_long_send(self.connection.target_system,
+            self.connection.target_component,
+            mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0, 1, 0, 0, 0, 0, 0, 0)
+        self.detail("\tARM SINYALI GONDERILDI\n")
 
-        # Confirm vehicle armed before attempting to take off
-        while not self.vehicle.armed:
-            print(" Waiting for arming...")
-            time.sleep(1)
+        print("\tARAÇ ARM EDILIYOR")
+        self.connection.motors_armed_wait()
+        print("\tARAÇ ARM EDILDI")
+
+        self.resultMessage("ARM")
 
     def arm_and_takeoff(self, aTargetAltitude):
-        print("Basic pre-arm checks")
-        # Don't try to arm until autopilot is ready
-        while not self.vehicle.is_armable:
-            print(" Waiting for vehicle to initialise...")
-            time.sleep(1)
-            
-        print("Arming motors")
-        # Copter should arm in GUIDED mode
-        self.vehicle.mode    = VehicleMode("GUIDED")
-        self.vehicle.armed   = True
+        print("\nTAKEOFF KOMUTU ALINDI: HEDEF_YÜKSEKLİK=%d Metre" %(aTargetAltitude))
+        
+        self.arm_only()
 
-        # Confirm vehicle armed before attempting to take off
-        while not self.vehicle.armed:
-            print(" Waiting for arming...")
-            time.sleep(1)
+        self.detail("\tTAKEOFF SINYALI GONDERILIYOR")
+        self.connection.mav.command_long_send(self.connection.target_system,
+            self.connection.target_component,
+            mavutil.mavlink.MAV_CMD_NAV_TAKEOFF, 0, 0, 0, 0, 0, 0, 0, aTargetAltitude)
+        self.detail("\tTAKEOFF SINYALI GONDERILDI")
 
-        print("Taking off!")
-        self.vehicle.simple_takeoff(aTargetAltitude) # Take off to target altitude
-
-        # Wait until the vehicle reaches a safe height before processing the goto (otherwise the command
-        #  after Vehicle.simple_takeoff will execute immediately).
-        while True:
-            print(" Altitude: ", self.vehicle.location.global_relative_frame.alt)
-            #Break and return from function just below target altitude.
-            if self.vehicle.location.global_relative_frame.alt>=aTargetAltitude*0.95:
-                print("Reached target altitude")
+        print("\tARAÇ YÜKSELİYOR")
+        while 1:
+            msg = self.connection.recv_match(
+                type='LOCAL_POSITION_NED', blocking=True)
+            print('\t\tYUKSEKLIK: %f metre' %(-msg.z))
+            if -msg.z > aTargetAltitude * 0.98:
                 break
-            time.sleep(1)
+        print('\tHEDEF YÜKSEKLİĞE ULAŞILDI')
 
-    def go_to(self, posx, posy, posz, yaw_rate):
-        msg = self.vehicle.message_factory.set_position_target_local_ned_encode(
-            0,
-            0, 0,
-            mavutil.mavlink.MAV_FRAME_LOCAL_NED, 
-            0b0000011111111000,
-            posx, posy, posz, #pozisyonlar(metre)
-            0, 0, 0,#hizlar(metre/s)
-            0, 0, 0,#akselarasyon(fonksiyonsuz)
-            0, math.radians(yaw_rate))#yaw,yaw_rate(rad,rad/s)
-        self.vehicle.send_mavlink(msg)
+        self.resultMessage("TAKEOFF")
 
-    def calculate_distance(self, posx, posy, posz):
-        dx = pow(2, posx - self.vehicle.location.global_relative_frame.lat)
-        dy = pow(2, posy - self.vehicle.location.global_relative_frame.lon)
-        dz = pow(2, posz - self.vehicle.location.global_relative_frame.alt)
-        
-        return math.sqrt(dx + dy + dz)
+    def changeVehicleMode(self, mode):
+        print("\nMOD DEGISTIRME KOMUTU ALINDI: HEDEF MOD=\"%s\"" %(mode))
 
-    def distance_inplace(self, posx, posy, posz):
-        return [
-            posx - self.vehicle.location.global_relative_frame.lat,
-            posy - self.vehicle.location.global_relative_frame.lon,
-            posz - self.vehicle.location.global_relative_frame.alt
-        ]
+        if mode not in self.connection.mode_mapping():
+            print("BILINMEYEN MOD : {}".format(mode))
+            print("UYGUN MODLAR : ", list(self.connection.mode_mapping().keys()))
+            self.resultMessage("MOD DEGISTIRME", success=False, failReason="BILINMEYEN MOD")
+            return
 
-    def in_position(self, posx, posy, posz, loc):
-        ifx = posx > loc.north - 0.3 \
-            and posx < loc.north + 0.3
-        ify = posy > loc.east - 0.3 \
-            and posy < loc.east + 0.3
-        ifz = posz > loc.down - 0.3 \
-            and posz < loc.down + 0.3
-        return ifx and ify and ifz
+        mode_id = self.connection.mode_mapping()[mode]
+        self.detail("\tMOD DEGISTIRME SINYALI GONDERILIYOR")
+        self.connection.set_mode(mode_id)
+        self.detail("\tMOD DEGISTIRME SINYALI GONDERILDI")
 
-    def accelerated_go(self, posx, posy, posz):
-        print('Calculating the speed..')
-        while not self.in_position(posx, posy, posz):
-            dist = self.distance_inplace(posx, posy, posz)
-            print(dist[0], dist[1], dist[2])
-            speed = [2.0 if abs(elem) > 30 else elem / 15.0 for elem in dist]
-            print(speed[0], speed[1], speed[2])
-            self.send_ned_velocity(speed[0], speed[1], speed[2])
+        print("\tMOD DEGISIMI BEKLENIYOR")
+        while True:
+            ack_msg = self.connection.recv_match(type="COMMAND_ACK", blocking=True)
+            ack_msg = ack_msg.to_dict()
 
-    def send_ned_velocity(self, velocity_x, velocity_y, velocity_z):
-        """
-        Move vehicle in direction based on specified velocity vectors.
-        This uses the SET_POSITION_TARGET_GLOBAL_INT command with type mask enabling only 
-        velocity components 
-        (http://dev.ardupilot.com/wiki/copter-commands-in-guided-mode/#set_position_target_global_int).
-        
-        Note that from AC3.3 the message should be re-sent every second (after about 3 seconds
-        with no message the velocity will drop back to zero). In AC3.2.1 and earlier the specified
-        velocity persists until it is canceled. The code below should work on either version 
-        (sending the message multiple times does not cause problems).
-        
-        See the above link for information on the type_mask (0=enable, 1=ignore). 
-        At time of writing, acceleration and yaw bits are ignored.
-        """
-        msg = self.vehicle.message_factory.set_position_target_global_int_encode(
-            0,       # time_boot_ms (not used)
-            0, 0,    # target system, target component
-            mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT, # frame
-            0b0000111111000111, # type_mask (only speeds enabled)
-            0, # lat_int - X Position in WGS84 frame in 1e7 * meters
-            0, # lon_int - Y Position in WGS84 frame in 1e7 * meters
-            0, # alt - Altitude in meters in AMSL altitude(not WGS84 if absolute or relative)
-            # altitude above terrain if GLOBAL_TERRAIN_ALT_INT
-            velocity_x, # X velocity in NED frame in m/s
-            velocity_y, # Y velocity in NED frame in m/s
-            velocity_z, # Z velocity in NED frame in m/s
-            0, 0, 0, # afx, afy, afz acceleration (not supported yet, ignored in GCS_Mavlink)
-            0, 0)    # yaw, yaw_rate (not supported yet, ignored in GCS_Mavlink)
-        self.vehicle.send_mavlink(msg)
+            if ack_msg["command"] != mavutil.mavlink.MAV_CMD_DO_SET_MODE:
+                continue
+
+            self.detail(mavutil.mavlink.enums["MAV_RESULT"][ack_msg["result"]].description)
+            print("\tMOD DEGISTIRILDI YENI MOD:\"%s\"" %(mode))
+
+            break
+
+        self.resultMessage("MOD DEGISTIRME")
 
     def immadiateLanding(self):
-        print("Changing Mode to LAND...")
-        self.vehicle.mode = VehicleMode("LAND")
-        while self.vehicle.mode != VehicleMode("LAND"):
-            time.sleep(1)
-        print("Success!")
+        print("\nACIL INIS KOMUTU ALINDI")
 
-        while self.vehicle.location.global_relative_frame.alt >= 0.1:
-            print(' Altitude: ', self.vehicle.location.global_relative_frame.alt)
-            time.sleep(1)
+        self.changeVehicleMode("LAND")
+
+        print("\tIHA INISE GECIYOR")
+        # while self.connection.location.global_relative_frame.alt >= 0.1:
+        #     print(" Altitude: ", self.vehicle.location.global_relative_frame.alt)
+        #     time.sleep(1)
+        print('\tIHA BASARIYLA INDI')
         
-        print('Landed')
+        self.resultMessage("ACIL INIS")
 
-
-    def tespit(self, model, path):
-        if os.path.isfile(path) is False:
-            return False
-        img = image.load_img(path, target_size=(224,224))
-        x = image.img_to_array(img)
-        x = np.expand_dims(x, axis=0) / 255
-
-        classes = model.predict(x)
+    def move(self, x, y, z, vx=0, vy=0, vz=0, afx=0, afy=0, afz=0, yaw=0, yaw_rate=0, coordinate_frame=mavutil.mavlink.MAV_FRAME_LOCAL_NED, type_mask=int(0b110111111000)):
+        print('\nMOVE KOMUTU ALINDI')
         
-        print(np.argmax(classes[0])==0, max(classes[0]))
-        return np.argmax(classes[0]) == 0
+        self.detail('MOVE SINYALI GONDERILIYOR')
+        self.connection.mav.send(mavutil.mavlink.MAVLink_set_position_target_local_ned_message(10, self.connection.target_system, self.connection.target_component,
+            coordinate_frame, type_mask,
+            x, y, z, #konum
+            vx, vy, vz, #hiz
+            afx, afy, afz, #ivme
+            yaw, yaw_rate)) #yaw
+        self.detail('MOVE SINYALI GONDERILDI')
 
-    def foto_cek(self, cam):
-        ret, frame = cam.read()
-        # if not ret:
-        #     print("failed to grab frame")
-        #     return 0
+        while 1:
+            msg = self.connection.recv_match(
+                type='LOCAL_POSITION_NED', blocking=True)
 
-        path = "img/taken_photo{}.jpg".format(random.randint(1,1))
-        # cv2.imwrite(path, frame)
-        print("{} written!".format(path))
-        
-        cam.release()
-        return path
-
-    def get_fire_loc(self, path):
-        return [self.vehicle.location.local_frame.north, self.vehicle.location.local_frame.east, self.vehicle.location.local_frame.down - 3]
-
-    def goruntu_isleme(self, cam, model):
-        path = self.foto_cek(cam)
-        print(path)
-        if path == 0:
-            return False
-        if self.tespit(model, path) == 1:
-            loc = self.get_fire_loc(path)
-            self.go_to(loc[0], loc[1], loc[2], 0)
-            print("im here!")
-            return True
-        
-        # if os.path.isfile(path):
-        #     os.remove(path)
-
-        return False
-
-
-    def havadaTurlama(self):
-        model = model_from_json(open("inc/model_new.json", "r").read())
-        model.load_weights("inc/fire_detection_weights.h5")
-        
-        cam = cv2.VideoCapture(0)
-        
-        self.arm_and_takeoff(5)
-        location = self.vehicle.location.local_frame
-        shift = 3
-        
-        while True:
-            self.go_to(location.north + shift, location.east + shift, location.down, 0)
-            while (self.vehicle.location.local_frame.north < location.north + shift - 0.3 \
-                or self.vehicle.location.local_frame.east < location.east + shift - 0.3):
-                time.sleep(1)
-            
-            if self.goruntu_isleme(cam, model):
+            distance = math.sqrt((msg.x - x) ** 2 + (msg.y - y) ** 2 + (msg.z - z) ** 2)
+            print('\t\tKONUM: { x : %f, y : %f, z : %f } : HEDEFE UZAKLIK : %f' %(msg.x, msg.y, msg.z, distance))
+            if distance < 0.1:
+                print('\tHEDEFE ULASILDI')
                 break
 
-            self.go_to(location.north + shift, location.east - shift, location.down, 0)
-            while (self.vehicle.location.local_frame.north < location.north + shift - 0.3 \
-                or self.vehicle.location.local_frame.east > location.east - shift + 0.3):
-                time.sleep(1)
+        self.resultMessage('MOVE')
 
-            if self.goruntu_isleme(cam, model):
-                break
-            
-            self.go_to(location.north - shift, location.east - shift, location.down, 0)
-            while (self.vehicle.location.local_frame.north > location.north - shift + 0.3 \
-                or self.vehicle.location.local_frame.east > location.east - shift + 0.3):
-                time.sleep(1)
-            
-            if self.goruntu_isleme(cam, model):
-                break
+    # def tespit(self, model, path):
+    #     if os.path.isfile(path) is False:
+    #         return False
+    #     img = image.load_img(path, target_size=(224,224))
+    #     x = image.img_to_array(img)
+    #     x = np.expand_dims(x, axis=0) / 255
 
-            self.go_to(location.north - shift, location.east + shift, location.down, 0)
-            while (self.vehicle.location.local_frame.north > location.north - shift + 0.3 \
-                or self.vehicle.location.local_frame.east < location.east + shift - 0.3):
-                time.sleep(1)
-            
-            if self.goruntu_isleme(cam, model):
-                break
+    #     classes = model.predict(x)
+        
+    #     print(np.argmax(classes[0])==0, max(classes[0]))
+    #     return np.argmax(classes[0]) == 0
 
-            shift *= 1.33
-        cam.release()
-        cv2.destroyAllWindows()
+    # def foto_cek(self, cam):
+    #     ret, frame = cam.read()
+    #     # if not ret:
+    #     #     print("failed to grab frame")
+    #     #     return 0
+
+    #     path = "img/taken_photo{}.jpg".format(random.randint(1,1))
+    #     # cv2.imwrite(path, frame)
+    #     print("{} written!".format(path))
+        
+    #     cam.release()
+    #     return path
+
+    # def get_fire_loc(self, path):
+    #     return [self.vehicle.location.local_frame.north, self.vehicle.location.local_frame.east, self.vehicle.location.local_frame.down - 3]
+
+    # def goruntu_isleme(self, cam, model):
+    #     path = self.foto_cek(cam)
+    #     print(path)
+    #     if path == 0:
+    #         return False
+    #     if self.tespit(model, path) == 1:
+    #         loc = self.get_fire_loc(path)
+    #         self.go_to(loc[0], loc[1], loc[2], 0)
+    #         print("im here!")
+    #         return True
+        
+    #     # if os.path.isfile(path):
+    #     #     os.remove(path)
+
+    #     return False
+
+
+    # def havadaTurlama(self):
+    #     model = model_from_json(open("inc/model_new.json", "r").read())
+    #     model.load_weights("inc/fire_detection_weights.h5")
+        
+    #     cam = cv2.VideoCapture(0)
+        
+    #     self.arm_and_takeoff(5)
+    #     location = self.vehicle.location.local_frame
+    #     shift = 3
+        
+    #     while True:
+    #         self.go_to(location.north + shift, location.east + shift, location.down, 0)
+    #         while (self.vehicle.location.local_frame.north < location.north + shift - 0.3 \
+    #             or self.vehicle.location.local_frame.east < location.east + shift - 0.3):
+    #             time.sleep(1)
+            
+    #         if self.goruntu_isleme(cam, model):
+    #             break
+
+    #         self.go_to(location.north + shift, location.east - shift, location.down, 0)
+    #         while (self.vehicle.location.local_frame.north < location.north + shift - 0.3 \
+    #             or self.vehicle.location.local_frame.east > location.east - shift + 0.3):
+    #             time.sleep(1)
+
+    #         if self.goruntu_isleme(cam, model):
+    #             break
+            
+    #         self.go_to(location.north - shift, location.east - shift, location.down, 0)
+    #         while (self.vehicle.location.local_frame.north > location.north - shift + 0.3 \
+    #             or self.vehicle.location.local_frame.east > location.east - shift + 0.3):
+    #             time.sleep(1)
+            
+    #         if self.goruntu_isleme(cam, model):
+    #             break
+
+    #         self.go_to(location.north - shift, location.east + shift, location.down, 0)
+    #         while (self.vehicle.location.local_frame.north > location.north - shift + 0.3 \
+    #             or self.vehicle.location.local_frame.east < location.east + shift - 0.3):
+    #             time.sleep(1)
+            
+    #         if self.goruntu_isleme(cam, model):
+    #             break
+
+    #         shift *= 1.33
+    #     cam.release()
+    #     cv2.destroyAllWindows()
