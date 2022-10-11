@@ -107,9 +107,12 @@ class drone:
         self.changeVehicleMode("LAND")
 
         print("\tIHA INISE GECIYOR")
-        # while self.connection.location.global_relative_frame.alt >= 0.1:
-        #     print(" Altitude: ", self.vehicle.location.global_relative_frame.alt)
-        #     time.sleep(1)
+        while 1:
+            msg = self.connection.recv_match(
+                type='LOCAL_POSITION_NED', blocking=True)
+            print('\t\tYUKSEKLIK: %f metre' %(-msg.z))
+            if -msg.z > 0.1:
+                break
         print('\tIHA BASARIYLA INDI')
         
         self.resultMessage("ACIL INIS")
