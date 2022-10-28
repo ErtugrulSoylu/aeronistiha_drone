@@ -19,13 +19,10 @@
 <script src="https://unpkg.com/leaflet@1.6.0/dist/leaflet.js"
     integrity="sha512-gZwIG9x3wUXg2hdXF6+rVkLF/0Vi9U8D2Ntg4Ga5I5BZpVkVxlJWbSQtXPSiUTtC0TjtGOmxa1AJPuV0CPthew=="
     crossorigin=""></script>
-    
-<script src="/socket.io/socket.io.js"></script>
-
 <script>
     // Initialize the map
     const map = L.map('map')
-  
+
     // Get the tile layer from OpenStreetMaps
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         // Specify the maximum zoom of the map
@@ -34,26 +31,24 @@
         // Set the attribution for OpenStreetMaps
         attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }).addTo(map);
-  
-    // Set the view of the map
-    // with the latitude, longitude and the zoom value
-    map.setView([48.8584, 2.2945], 16);
-      
-    // Set the map view to the user's location
-    // Uncomment below to set map according to user location
-    // map.locate({setView: true, maxZoom: 16});
-  
-    // Show a market at the position of the Eiffel Tower
-    let eiffelMarker = L.marker([48.8584, 2.2945]).addTo(map);
-  
-    // Bind popup to the marker with a popup
-    eiffelMarker.bindPopup("Eiffel Tower").openPopup();
+    
+    var marker
 
-    var socket = io.connect('http://localhost');
-    socket.on('news', function (data) {
-        console.log(data);
-        socket.emit('my other event', { my: 'data' });
-    });
+    function loadMap(x, y) {
+        map.setView([x, y], 16);
+        marker = L.marker([x, y]);
+        marker.addTo(map);
+    }
+    
+    function changeLocation(x, y) {
+        try {
+            map.removeLayer(marker);
+            marker = L.marker([x, y]);
+            marker.addTo(map);
+        } catch (error) {
+
+        }
+    }
 </script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-# Form implementation generated from reading ui file '../drone.ui'
+# Form implementation generated from reading ui file 'drone.ui'
 #
 # Created by: PyQt6 UI code generator 6.3.1
 #
@@ -154,12 +154,12 @@ class Ui_MainWindow(object):
         self.centralwidget = QtWidgets.QWidget(MainWindow)
         self.centralwidget.setObjectName("centralwidget")
         self.grafik_kamera = QtWidgets.QGraphicsView(self.centralwidget)
-        self.grafik_kamera.setGeometry(QtCore.QRect(780, 10, 251, 271))
+        self.grafik_kamera.setGeometry(QtCore.QRect(790, 10, 241, 271))
         self.grafik_kamera.setStyleSheet("background: rgba(61, 56, 70, 0.8);\n"
 "border-radius: 10px")
         self.grafik_kamera.setObjectName("grafik_kamera")
         self.label_kamera = QtWidgets.QLabel(self.centralwidget)
-        self.label_kamera.setGeometry(QtCore.QRect(790, 20, 55, 16))
+        self.label_kamera.setGeometry(QtCore.QRect(800, 20, 55, 16))
         self.label_kamera.setObjectName("label_kamera")
         self.scriptButon_otonomKalkisInis = QtWidgets.QPushButton(self.centralwidget)
         self.scriptButon_otonomKalkisInis.setGeometry(QtCore.QRect(840, 590, 91, 31))
@@ -421,6 +421,10 @@ class Ui_MainWindow(object):
 "border-radius: 10px")
         self.label_bg_gray4.setText("")
         self.label_bg_gray4.setObjectName("label_bg_gray4")
+        self.label_kameracv2 = QtWidgets.QLabel(self.centralwidget)
+        self.label_kameracv2.setGeometry(QtCore.QRect(799, 49, 221, 221))
+        self.label_kameracv2.setText("")
+        self.label_kameracv2.setObjectName("label_kameracv2")
         self.mapArea.raise_()
         self.label_bg_gray4.raise_()
         self.label_bg_gray3.raise_()
@@ -451,6 +455,7 @@ class Ui_MainWindow(object):
         self.label_ucusModu.raise_()
         self.attribute_voltaj.raise_()
         self.label_voltaj.raise_()
+        self.label_kameracv2.raise_()
         MainWindow.setCentralWidget(self.centralwidget)
 
         self.retranslateUi(MainWindow)

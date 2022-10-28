@@ -3,22 +3,32 @@ import threading
 import math
 import sys
 import os
-sys.path.append('./src')
-sys.path.append('./inc')
 # kullanici arayuzu
+import cv2
 from fileinput import filename
+# PyQt
+from PyQt6.QtGui import QImage, QPixmap
 from PyQt6.QtWidgets import QApplication, QMainWindow
-from PyQt6.QtCore import Qt, pyqtSignal, QObject, QCoreApplication, QTimer, QUrl
+from PyQt6.QtCore import Qt, pyqtSignal, QObject, QCoreApplication, QTimer, QUrl, QEvent, pyqtSlot, QThread
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from ui_drone import Ui_MainWindow
+from inc.ui_drone import Ui_MainWindow
 # drone
 from dronekit import connect, VehicleMode
-from ucus_komutlari import aero
+from src.ucus_komutlari import aero
 # veriler
 import pandas as pd
 
-connection_string="127.0.0.1:14550"
-vehicle = connect(connection_string,wait_ready=True,timeout=100)
+connection = None
+simulation = True
+
+if connection:
+    vehicle = connection
+elif simulation:
+    vehicle = connect("127.0.0.1:14550")
+    print('IHA SIMULASYON ORTAMINA HAZIR')
+else:
+    vehicle = connect("/dev/serial0", baudrate=57600)
+    print('IHA PIXHAWKA BAGLANDI\n')
 ui = Ui_MainWindow()
 
 veriDict = {'yatay hiz':[],'dikey hiz':[], 'pil seviyesi':[], 'cekilen akim':[], 'voltaj':[] , 'zaman':[]}
@@ -29,8 +39,8 @@ class Attributes(QObject):
     bataryaGonder = pyqtSignal(list)
     hizGonder = pyqtSignal(list)
     modGonder = pyqtSignal(list)
-    # haritaGonder = pyqtSignal(list)
-
+    haritaGonder = pyqtSignal(list)
+    kameraGonder = pyqtSignal(QImage)
 
 def bataryaGuncelle(value):
     ui.attribute_cekilenAkim.display(value[0])
@@ -46,26 +56,44 @@ def hizGuncelle(value):
 def modGuncelle(value):
     ui.attribute_ucusModu.setText(value[0])
 
-# def haritaGuncelle(value):
-#     vehicleLon = value[0]
-#     vehicleLat = value[1]
+def haritaGuncelle(value):
+    ui.mapArea.page().runJavaScript("changeLocation({}, {})".format(value[0], value[1]))
+    return
+
+def kameraGuncelle(image):
+    ui.label_kameracv2.setPixmap(QPixmap.fromImage(image))
+
 
 # Sinyaller
 attr = Attributes()
 attr.bataryaGonder.connect(bataryaGuncelle)
 attr.hizGonder.connect(hizGuncelle)
 attr.modGonder.connect(modGuncelle)
-# attr.haritaGonder.connect(haritaGuncelle)
+attr.haritaGonder.connect(haritaGuncelle)
+attr.kameraGonder.connect(kameraGuncelle)
+
+class CamReader(QThread):
+    def run(self):
+        cap = cv2.VideoCapture(0)
+        while self.isRunning:
+            ret, frame = cap.read()
+            if ret:
+                rgbImage = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                h, w, ch = rgbImage.shape
+                bytesPerLine = ch * w
+                convertToQtFormat = QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format.Format_RGB888)
+                p = convertToQtFormat.scaled(221, 221)
+                attr.kameraGonder.emit(p)
 
 # Window
 class MainWindow:
     def __init__(self):
-        self.drone = aero(vehicle)
         self.main_win = QMainWindow()
+        self.main_win.closeEvent = self.exit
         ui.setupUi(self.main_win)
 
         self.main_win.m_flag = False
-        self.droneThreadFlag = False
+        vehicleThreadFlag = False
         self.coordinates = (0, 0)
         
         # Zamanlayici
@@ -87,8 +115,13 @@ class MainWindow:
         ui.modButon_land.clicked.connect(self.landMode)
         ui.modButon_stabilize.clicked.connect(self.stabilizeMode)
 
-        self.initMap()
-        self.main_win.closeEvent = self.exit
+        # Harita
+        ui.mapArea.loadFinished.connect(self.initMap)
+        ui.mapArea.setHtml(open('index.html', 'r').read())
+        
+        # Kamera
+        self.cam = CamReader(ui.grafik_kamera)
+        self.cam.start()
 
     ############################################################################################################
     ######################################            GEREKLI              #####################################
@@ -146,27 +179,27 @@ class MainWindow:
     def modOku(self, attr_name, value):
         attr.modGonder.emit([value.name])
     
-    # @vehicle.on_attribute('location.global_frame')
-    # def haritaGuncelle(self, attr_name, value):
-    #     if (vehicleLat != value.lat or vehicleLon != value.lon):
-    #         attr.haritaGonder.emit([value.lat, value.lon])
 
     ############################################################################################################
     ######################################             HARITA             ######################################
     ############################################################################################################
 
-    def initMap(self):
-        global vehicleLon
-        global vehicleLat
+    def initMap(self, ok):
+        lat = vehicle.location.global_frame.lat
+        lon = vehicle.location.global_frame.lon
 
-        vehicleLon = vehicle.location.global_frame.lon
-        vehicleLat = vehicle.location.global_frame.lat
-    
-        webView = ui.mapArea
-        with open('index.html', 'r') as f:
-            html = f.read()
-            webView.setHtml(html)
+        print(lat, lon)
+        ui.mapArea.page().runJavaScript("changeLocation({}, {})".format(lat, lon))
 
+        if ok:
+            ui.mapArea.page().runJavaScript("loadMap({}, {})".format(lat, lon))
+
+    @vehicle.on_attribute('location.global_frame')
+    def haritaGuncelle(self, attr_name, value):
+        lat = vehicle.location.global_frame.lat
+        lon = vehicle.location.global_frame.lon
+        
+        attr.haritaGonder.emit([lat, lon])
 
     ############################################################################################################
     ######################################            BUTONLAR            ######################################
@@ -175,48 +208,47 @@ class MainWindow:
     ## SCRIPTS ##
 
     def scriptThread(self, target):
-        if self.droneThreadFlag is False:
-            self.droneThreadFlag = True
+        if vehicleThreadFlag is False:
+            vehicleThreadFlag = True
             target()
-            self.droneThreadFlag = False
+            vehicleThreadFlag = False
 
     def armTest(self):
-        threading.Thread(target=self.scriptThread, args=(self.drone.test, )).start()
+        threading.Thread(target=self.scriptThread, args=(vehicle.test, )).start()
 
     def otonomKalkisInis(self):
-        threading.Thread(target=self.scriptThread, args=(self.drone.otonom_kalkis_inis, )).start()
+        threading.Thread(target=self.scriptThread, args=(vehicle.otonom_kalkis_inis, )).start()
 
     def acilInis(self):
-        self.droneThreadFlag = True
-        self.drone.acil_inis()
-        self.droneThreadFlag = False
+        vehicleThreadFlag = True
+        vehicle.acil_inis()
+        vehicleThreadFlag = False
 
     def yuksel(self):
-        threading.Thread(target=self.scriptThread, args=(self.drone.otonom_yuksel, )).start()
+        threading.Thread(target=self.scriptThread, args=(vehicle.otonom_yuksel, )).start()
 
     ## MODES ##
 
-    def stabilizeMode(self):
-        self.drone.vehicle.mode = VehicleMode('STABILIZE')
+    def stabilizeMode(self):    
+        vehicle.mode = VehicleMode('STABILIZE')
 
     def loiterMode(self):
-        self.drone.vehicle.mode = VehicleMode('LOITER')
+        vehicle.mode = VehicleMode('LOITER')
 
     def guidedMode(self):
-        self.drone.vehicle.mode = VehicleMode('GUIDED')
+        vehicle.mode = VehicleMode('GUIDED')
 
     def landMode(self):
-        self.drone.vehicle.mode = VehicleMode('LAND')
+        vehicle.mode = VehicleMode('LAND')
 
     def posHoldMode(self):
-        self.drone.vehicle.mode = VehicleMode('POSHOLD')
+        vehicle.mode = VehicleMode('POSHOLD')
     
     ############################################################################################################
     ######################################          LOG DOSYALARI         ######################################
     ############################################################################################################
 
-    def exit(self, event=None):
-        self.closing = True
+    def logging(self):
         if not os.path.isdir("logs"):
             os.makedirs("logs")
 
@@ -258,7 +290,19 @@ class MainWindow:
         worksheet.insert_chart(1, 8, chart)
 
         # excel dosyasini kapama
-        workbook.close()        
+        workbook.close()
+
+    def exit(self, event=None):
+        self.closing = True
+
+        # kamera threadini kapatma
+        self.cam.isRunning = False
+        self.cam.exit()
+        self.cam.wait()
+
+        # log dosyalari olusturma
+        self.logging()
+
         QCoreApplication.instance().quit()
 
 
