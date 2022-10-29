@@ -74,7 +74,7 @@ attr.kameraGonder.connect(kameraGuncelle)
 
 class CamReader(QThread):
     def run(self):
-        cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture("/dev/video2")
         while self.isRunning:
             ret, frame = cap.read()
             if ret:
@@ -82,7 +82,7 @@ class CamReader(QThread):
                 h, w, ch = rgbImage.shape
                 bytesPerLine = ch * w
                 convertToQtFormat = QImage(rgbImage.data, w, h, bytesPerLine, QImage.Format.Format_RGB888)
-                p = convertToQtFormat.scaled(221, 221)
+                p = convertToQtFormat.scaled(251, 200)
                 attr.kameraGonder.emit(p)
 
 # Window
