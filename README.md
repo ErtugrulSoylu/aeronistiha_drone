@@ -20,6 +20,8 @@ Opens a new tab on terminal and starts gazebo for simulation, mavproxy/ardupilot
 - It should pop up an interface and gazebo like this:
 
 ![image](https://user-images.githubusercontent.com/75154294/188283737-845f9203-9e4c-49b9-bbbc-3e30ebb87ebb.png)
+![ff35f1be-eab2-48a7-a3a1-590c5e0f7f04](https://user-images.githubusercontent.com/75154294/236026588-defd6eba-4e89-4b90-890a-d7a4683217c0.jpg)
+
 
 
 - After closing the application, it should create an excel log file in logs folder like this:
